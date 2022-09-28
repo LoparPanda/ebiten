@@ -82,6 +82,8 @@ const (
 	// The product of source and destination (a.k.a 'multiply blend mode')
 	// c_out = c_src * c_dst
 	CompositeModeMultiply CompositeMode = CompositeMode(graphicsdriver.CompositeModeMultiply)
+
+	CompositeModeSubtractive CompositeMode = CompositeMode(graphicsdriver.CompositeModeSubtractive)
 )
 
 // GraphicsLibrary represets graphics libraries supported by the engine.

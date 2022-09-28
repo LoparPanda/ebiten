@@ -36,8 +36,9 @@ const (
 	CompositeModeXor
 	CompositeModeLighter
 	CompositeModeMultiply
+	CompositeModeSubtractive
 
-	CompositeModeMax = CompositeModeMultiply
+	CompositeModeMax = CompositeModeSubtractive
 )
 
 type Operation int
@@ -82,6 +83,8 @@ func (c CompositeMode) Operations() (src Operation, dst Operation) {
 		return One, One
 	case CompositeModeMultiply:
 		return DstColor, Zero
+	case CompositeModeSubtractive:
+		return One, One
 	default:
 		panic(fmt.Sprintf("graphics: invalid composite mode: %d", c))
 	}

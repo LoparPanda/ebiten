@@ -23,6 +23,14 @@ import (
 
 type operation int
 
+type BlendEquation int
+
+const (
+	GL_FUNC_ADD              BlendEquation = 32774
+	GL_FUNC_REVERSE_SUBTRACT               = 32779
+	GL_FUNC_SUBTRACT                       = 32778
+)
+
 func convertOperation(op graphicsdriver.Operation) operation {
 	switch op {
 	case graphicsdriver.Zero:

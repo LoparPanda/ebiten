@@ -129,7 +129,13 @@ func (c *context) blendFunc(mode graphicsdriver.CompositeMode) {
 	c.lastCompositeMode = mode
 	s, d := mode.Operations()
 	s2, d2 := convertOperation(s), convertOperation(d)
-	gl.BlendFunc(uint32(s2), uint32(d2))
+	if mode == graphicsdriver.CompositeModeSubtractive {
+		gl.BlendFuncSeparate(uint32(one), uint32(one), uint32(zero), uint32(one))
+		gl.BlendEquationSeparate(uint32(GL_FUNC_REVERSE_SUBTRACT), uint32(GL_FUNC_ADD))
+	} else {
+		gl.BlendFunc(uint32(s2), uint32(d2))
+		gl.BlendEquation(uint32(GL_FUNC_ADD))
+	}
 }
 
 func (c *context) scissor(x, y, width, height int) {
