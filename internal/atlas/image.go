@@ -213,6 +213,8 @@ type Image struct {
 	// isolatedCount represents how many times the image on a texture atlas is changed into an isolated image.
 	// isolatedCount affects the calculation when to put the image onto a texture atlas again.
 	isolatedCount int
+
+	tmpBackends []*backend
 }
 
 // moveTo moves its content to the given image dst.
@@ -244,11 +246,22 @@ func (i *Image) paddingSize() int {
 	return 0
 }
 
-func (i *Image) ensureIsolated() {
+func (i *Image) ensureIsolatedFrom(backends []*backend) {
 	i.resetUsedAsSourceCount()
 
 	if i.backend == nil {
-		i.allocate(false)
+		i.allocate(backends)
+		return
+	}
+
+	var needsIsolation bool
+	for _, b := range backends {
+		if i.backend == b {
+			needsIsolation = true
+			break
+		}
+	}
+	if !needsIsolation {
 		return
 	}
 
@@ -258,8 +271,8 @@ func (i *Image) ensureIsolated() {
 
 	newI := NewImage(i.width, i.height, i.imageType)
 
-	// Call allocate explicitly in order to have an isolated backend.
-	newI.allocate(false)
+	// Call allocate explicitly in order to have an isolated backend from the specified backends.
+	newI.allocate(backends)
 
 	w, h := float32(i.width), float32(i.height)
 	vs := make([]float32, 4*graphics.VertexFloatCount)
@@ -279,7 +292,7 @@ func (i *Image) ensureIsolated() {
 
 func (i *Image) putOnAtlas(graphicsDriver graphicsdriver.Graphics) error {
 	if i.backend == nil {
-		i.allocate(true)
+		i.allocate(nil)
 		return nil
 	}
 
@@ -331,8 +344,16 @@ func (i *Image) processSrc(src *Image) {
 	if src.disposed {
 		panic("atlas: the drawing source image must not be disposed (DrawTriangles)")
 	}
+
 	if src.backend == nil {
-		src.allocate(true)
+		if i.backend != nil {
+			i.tmpBackends = append(i.tmpBackends, i.backend)
+		}
+		src.allocate(i.tmpBackends)
+		for idx := range i.tmpBackends {
+			i.tmpBackends[idx] = nil
+		}
+		i.tmpBackends = i.tmpBackends[:0]
 	}
 
 	// Compare i and source images after ensuring i is not on an atlas, or
@@ -364,13 +385,21 @@ func (i *Image) drawTriangles(srcs [graphics.ShaderImageCount]*Image, vertices [
 	if i.disposed {
 		panic("atlas: the drawing target image must not be disposed (DrawTriangles)")
 	}
-	if keepOnAtlas {
-		if i.backend == nil {
-			i.allocate(true)
+
+	for _, src := range srcs {
+		if src == nil {
+			continue
 		}
-	} else {
-		i.ensureIsolated()
+		if src.backend == nil {
+			continue
+		}
+		i.tmpBackends = append(i.tmpBackends, src.backend)
 	}
+	i.ensureIsolatedFrom(i.tmpBackends)
+	for idx := range i.tmpBackends {
+		i.tmpBackends[idx] = nil
+	}
+	i.tmpBackends = i.tmpBackends[:0]
 
 	for _, src := range srcs {
 		i.processSrc(src)
@@ -466,7 +495,7 @@ func (i *Image) writePixels(pix []byte, x, y, width, height int) {
 		if pix == nil {
 			return
 		}
-		i.allocate(true)
+		i.allocate(nil)
 	}
 
 	px, py, pw, ph := i.regionWithPadding()
@@ -626,7 +655,7 @@ func (i *Image) canBePutOnAtlas() bool {
 	return i.width+2*i.paddingSize() <= maxSize && i.height+2*i.paddingSize() <= maxSize
 }
 
-func (i *Image) allocate(putOnAtlas bool) {
+func (i *Image) allocate(forbiddenBackends []*backend) {
 	if i.backend != nil {
 		panic("atlas: the image is already allocated")
 	}
@@ -641,7 +670,7 @@ func (i *Image) allocate(putOnAtlas bool) {
 		return
 	}
 
-	if !putOnAtlas || !i.canBePutOnAtlas() {
+	if !i.canBePutOnAtlas() {
 		if i.width+2*i.paddingSize() > maxSize || i.height+2*i.paddingSize() > maxSize {
 			panic(fmt.Sprintf("atlas: the image being put on an atlas is too big: width: %d, height: %d", i.width, i.height))
 		}
@@ -656,7 +685,15 @@ func (i *Image) allocate(putOnAtlas bool) {
 		return
 	}
 
+	// Check if an existing backend is available.
+loop:
 	for _, b := range theBackends {
+		for _, bb := range forbiddenBackends {
+			if b == bb {
+				continue loop
+			}
+		}
+
 		if n, ok := b.tryAlloc(i.width+2*i.paddingSize(), i.height+2*i.paddingSize()); ok {
 			i.backend = b
 			i.node = n
